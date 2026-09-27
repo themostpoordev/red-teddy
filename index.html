@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#faf3ee" />
+    <title>thd</title>
+    <meta
+      name="description"
+      content="หมีตุ๊กตาหมีสีแดงในฉาก 3D — แตะหัว ลากท้อง หรือคลิกพื้นเพื่อเล่น"
+    />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <style>
+      /* Critical shell styles. Inlined so the first paint never shows a white
+         flash before the stylesheet chunk arrives. The full sheet lives in
+         src/styles.css; this is only what the empty frame needs. */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #faf3ee;
+      }
+      body {
+        /* Thai faces named explicitly: the generic `sans-serif` fallback
+           resolves to whatever the OS default is, which on a machine with no
+           Thai-capable default renders every glyph as a tofu box. */
+        font-family: ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui,
+          -apple-system, "Noto Sans Thai", "Leelawadee UI", "Sarabun", Tahoma,
+          sans-serif;
+        color: #3a2320;
+        -webkit-font-smoothing: antialiased;
+      }
+      #stage {
+        position: fixed;
+        inset: 0;
+      }
+      #stage canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        /* Own all gestures on the canvas so a drag on the bear never turns into
+           a page scroll or a double-tap zoom. */
+        touch-action: none;
+      }
+      .boot {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        gap: 12px;
+        color: #a8574c;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <div class="boot" id="boot">กำลังโหลด…</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

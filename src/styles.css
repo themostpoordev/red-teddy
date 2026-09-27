@@ -1,0 +1,288 @@
+/* ============================================================
+   FONTS
+   ============================================================
+   Noto Sans Thai is self-hosted rather than pulled from a CDN, and only
+   the two weights and two subsets actually used are imported. The page has
+   three short Thai strings plus a Latin wordmark, so this is roughly 40KB
+   of woff2 - cheap enough to always ship, and it removes the dependency on
+   the visitor's OS having a Thai-capable default. Systems that do have one
+   still win, because the local faces are tried first in the stack below.
+   ============================================================ */
+
+@import "@fontsource/noto-sans-thai/latin-400.css";
+@import "@fontsource/noto-sans-thai/latin-800.css";
+@import "@fontsource/noto-sans-thai/thai-400.css";
+@import "@fontsource/noto-sans-thai/thai-800.css";
+
+/* ============================================================
+   thd — design tokens
+   ============================================================
+   Four values, all on a red-biased hue line. The neutrals carry a
+   whisper of chroma toward the red (0.02) rather than sitting at pure
+   grey: it costs nothing and it makes the page, the character and the
+   text read as one authored piece rather than a red object dropped on
+   a neutral background.
+
+   Contrast against --cream (oklch 0.96):
+     --ink      0.22 L  → 12.3:1   body text
+     --ink-soft 0.45 L  →  5.4:1   secondary text
+     --red      0.60 L  →  3.4:1   large text / graphics only
+   Anything under 18px therefore uses --ink or --ink-soft, never --red.
+   ============================================================ */
+
+:root {
+  --cream: oklch(0.96 0.02 45);
+  --cream-deep: oklch(0.93 0.028 40);
+  --red: oklch(0.6 0.19 25);
+  --red-deep: oklch(0.42 0.15 25);
+  --ink: oklch(0.22 0.02 25);
+  --ink-soft: oklch(0.45 0.03 30);
+
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+
+  /* 1-4-9 spacing rhythm. Every margin and padding is one of these. */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 36px;
+
+  /* The Thai stack is listed explicitly rather than relying on the generic
+     `sans-serif` fallback. Without a Thai face named here, the browser picks
+     whatever the OS default resolves to — which on a headless or minimal
+     Linux install is a font with no Thai coverage, rendering every Thai
+     glyph as a tofu box. Naming the common Thai faces makes the choice
+     deterministic across the machines this gets visited from. */
+  --font-rounded: ui-rounded, "SF Pro Rounded", "Segoe UI Variable", "Segoe UI",
+    system-ui, -apple-system, "Noto Sans Thai", "Leelawadee UI", "Sarabun",
+    "Thonburi", "Tahoma", sans-serif;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 120ms;
+  --dur-base: 220ms;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-rounded);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  /* dvh tracks the collapsing mobile URL bar; vh would leave a gap under it. */
+  height: 100dvh;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+}
+
+#stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+#stage canvas:active {
+  cursor: grabbing;
+}
+
+/* ============================================================
+   WORDMARK
+   ============================================================ */
+
+.wordmark {
+  position: fixed;
+  top: calc(var(--s5) + env(safe-area-inset-top));
+  left: calc(var(--s5) + env(safe-area-inset-left));
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.wordmark__mark {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--red-deep);
+}
+
+.wordmark__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--red);
+}
+
+/* ============================================================
+   CARD
+   ============================================================
+   Bottom-left on desktop. Full-width above the safe area on phones,
+   where a floating inset card would either cover the bear or sit
+   under the thumb.
+   ============================================================ */
+
+.card {
+  position: fixed;
+  z-index: 2;
+  left: calc(var(--s5) + env(safe-area-inset-left));
+  bottom: calc(var(--s5) + env(safe-area-inset-bottom));
+  max-width: 22rem;
+  padding: var(--s4) var(--s5);
+  border-radius: var(--radius-md);
+  /* Translucent so the scene reads through it. The blur is what keeps
+     the text legible over a moving 3D background. */
+  background: color-mix(in oklab, var(--cream) 78%, transparent);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.7) inset,
+    0 8px 28px -12px rgb(90 40 32 / 0.35);
+}
+
+.card__title {
+  margin: 0;
+  font-size: clamp(1.35rem, 1.1rem + 1.4vw, 1.75rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.card__body {
+  margin: var(--s1) 0 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  /* Short UI copy, not an article — a tight measure keeps it to two
+     lines at every width instead of orphaning a word. */
+  max-width: 34ch;
+}
+
+.card__hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin: var(--s3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card__hint {
+  padding: var(--s1) var(--s3);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--red) 14%, transparent);
+  font-size: 0.8rem;
+  /* Only 400 and 800 are loaded, so this must be one of those two. Naming
+     600 makes the browser synthesise it, and some synthesis paths fall back
+     to a face with no Thai coverage — which renders the label as tofu boxes. */
+  font-weight: 800;
+  color: var(--red-deep);
+  /* 24px tall at rest; the ::before below extends the touch target. */
+  position: relative;
+}
+
+.card__hint::before {
+  content: "";
+  position: absolute;
+  inset: -10px -4px;
+}
+
+/* ============================================================
+   BOOT / ERROR
+   ============================================================ */
+
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--s3);
+  padding: var(--s5);
+  text-align: center;
+  color: var(--ink-soft);
+  background: var(--cream);
+  font-size: 0.95rem;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.boot[hidden] {
+  display: none;
+}
+
+.boot.is-gone {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.boot__bear {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.boot__detail {
+  max-width: 32ch;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+
+/* Tablet and below: the card moves to the bottom edge. A floating
+   inset card on a narrow screen either covers the character or
+   competes with the thumb zone. */
+@media (max-width: 640px) {
+  .card {
+    left: var(--s3);
+    right: var(--s3);
+    bottom: calc(var(--s3) + env(safe-area-inset-bottom));
+    max-width: none;
+    padding: var(--s3) var(--s4);
+  }
+
+  .card__body {
+    font-size: 0.9rem;
+  }
+}
+
+/* Landscape phone: vertical space is the constraint, so the card
+   stays a corner inset and sheds its body line. */
+@media (max-height: 480px) and (orientation: landscape) {
+  .card {
+    max-width: 18rem;
+    padding: var(--s3) var(--s4);
+  }
+
+  .card__body {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+  }
+}

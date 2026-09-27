@@ -1,0 +1,21 @@
+# Build output
+dist/
+*.tsbuildinfo
+
+# Dependencies
+node_modules/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Local env
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
