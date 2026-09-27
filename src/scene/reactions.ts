@@ -19,12 +19,26 @@ import type { Hearts } from "./hearts";
 
 export type Reactions = {
   update(dt: number, elapsed: number, pointerActive: boolean, pointerX: number, pointerY: number): void;
-  /** Head pat: smile, hearts, a small recoil. */
+  /** Head pat: a quick tap. Hearts, a small recoil. */
   pat(): void;
   /** Belly squeeze: the belly squashes and springs back. */
   squash(): void;
   /** Hop to a world-space target on the floor. */
   hopTo(target: THREE.Vector3): void;
+  /**
+   * A petting stroke has been recognised. Fired once, the moment a press on
+   * the head travels far enough to stop being a tap — not on the press frame,
+   * which is what made a stroke read as a burst of separate taps.
+   */
+  petBegin(): void;
+  /**
+   * The stroke continues. `x` and `y` are the pointer's normalised position,
+   * so the head can lean away from the touch the way a real head does under a
+   * hand rather than merely following it.
+   */
+  petMove(x: number, y: number): void;
+  /** The stroke ended. */
+  petEnd(): void;
   /** Set by the app so reactions can honour the OS motion preference. */
   reducedMotion: boolean;
 };
@@ -49,6 +63,37 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
    * never happened at all. The arms need a slower release than the belly has.
    */
   let hugAmount = 0;
+
+  /**
+   * Petting.
+   *
+   * Three values, because the gesture has three distinct parts and collapsing
+   * them is what makes a stroke read as a stutter rather than as a touch.
+   *
+   *   petAmount  how engaged the character is, 0..1. Rises on recognition of
+   *              the stroke and decays after it ends, so the whole body eases
+   *              into and out of being petted rather than snapping.
+   *   petX/petY  where the touch is, smoothed. The head leans AWAY from the
+   *              touch rather than toward it, which is what a head under a
+   *              hand actually does; leaning into it reads as the character
+   *              pushing the hand away.
+   */
+  let petAmount = 0;
+  let petTargetX = 0;
+  let petTargetY = 0;
+  let petX = 0;
+  let petY = 0;
+  let petHeartTimer = 0;
+
+  /**
+   * Seconds between hearts while being petted.
+   *
+   * 0.45 is chosen against the heart's own lifetime of 1.5s: at this spacing
+   * roughly three are alive at once, so a stroke produces a small trail
+   * rather than a single pop or a solid cloud. Faster and the trail becomes
+   * a wall; slower and the character stops seeming to react.
+   */
+  const PET_HEART_INTERVAL = 0.45;
 
   // --- blink ----------------------------------------------------------
   // Blinks land on a randomised schedule rather than a fixed period, which is
@@ -98,6 +143,25 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
       hugAmount = 1;
     },
 
+    petBegin() {
+      petAmount = 1;
+      // Hearts, but sparingly — a tap is a single delighted reaction, a stroke
+      // is a sustained one, and a heart every frame would be noise. The update
+      // loop emits on a timer instead; see PET_HEART_INTERVAL.
+    },
+
+    petMove(x, y) {
+      petTargetX = x;
+      petTargetY = y;
+    },
+
+    petEnd() {
+      // Deliberately does nothing to petAmount. It decays on its own in the
+      // update loop, so lifting the finger lets the character ease out of the
+      // gesture instead of dropping out of it — a hard cut reads as the
+      // touch being taken away.
+    },
+
     hopTo(target: THREE.Vector3) {
       // Ignore a tap while already airborne, otherwise rapid taps queue jumps
       // the bear has to finish before the next one starts.
@@ -123,6 +187,26 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
         squashAmount = Math.max(0, squashAmount - dt * 2.6);
         recoil = Math.max(0, recoil - dt * 3.2);
         hugAmount = Math.max(0, hugAmount - dt * 0.85);
+        // Slower than any other decay. A pet that let go as fast as it began
+        // would blink out of existence; this one is a long, easy release, and
+        // the other reactions are layered on top of it while it fades.
+        petAmount = Math.max(0, petAmount - dt * 0.7);
+      }
+
+      // --- pet heartbeat -------------------------------------------------
+      // Hearts on a timer while being petted, not on every frame. A stroke can
+      // run for a second or more, and one heart per frame would be a solid
+      // wall of them; on a timer it reads as the character reacting
+      // throughout, which is the point of a sustained touch.
+      if (!quiet && petAmount > 0.5) {
+        petHeartTimer -= dt;
+        if (petHeartTimer <= 0) {
+          petHeartTimer = PET_HEART_INTERVAL;
+          rig.head.getWorldPosition(scratch);
+          hearts.burst(scratch, 1);
+        }
+      } else {
+        petHeartTimer = PET_HEART_INTERVAL;
       }
 
       // --- gaze -------------------------------------------------------
@@ -137,22 +221,26 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
       // ever blink.
 
       // --- blink ------------------------------------------------------
+      // setBlink is called every frame, not only during a blink, because it
+      // also carries the petting squint. Calling it only on blink frames —
+      // which is what the old code did — means the squint is applied on
+      // 0.14s of every few seconds and is invisible the rest of the time.
       if (quiet) {
         setBlink(0);
+      } else if (blinkTimer < 0 && elapsed >= nextBlinkAt) {
+        blinkTimer = 0;
+      } else if (blinkTimer >= 0) {
+        blinkTimer += dt;
+        // 0.14s round trip: down fast, up slower.
+        const p = blinkTimer / 0.14;
+        setBlink(p < 0.45 ? p / 0.45 : 1 - (p - 0.45) / 0.55);
+        if (p >= 1) {
+          blinkTimer = -1;
+          nextBlinkAt = elapsed + 1.8 + Math.random() * 3.4;
+        }
       } else {
-        if (blinkTimer < 0 && elapsed >= nextBlinkAt) {
-          blinkTimer = 0;
-        }
-        if (blinkTimer >= 0) {
-          blinkTimer += dt;
-          // 0.14s round trip: down fast, up slower.
-          const p = blinkTimer / 0.14;
-          setBlink(p < 0.45 ? p / 0.45 : 1 - (p - 0.45) / 0.55);
-          if (p >= 1) {
-            blinkTimer = -1;
-            nextBlinkAt = elapsed + 1.8 + Math.random() * 3.4;
-          }
-        }
+        // No blink in progress: still call it, to apply the resting squint.
+        setBlink(0);
       }
 
       // --- breathing --------------------------------------------------
@@ -174,10 +262,27 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
         // angle modest is what keeps it reading as a look rather than the
         // whole character swivelling at the cursor. The belly-press tip is
         // added to this further down, where the arms are set up.
-        rig.head.rotation.y = damp(rig.head.rotation.y, pointerActive ? pointerX * 0.32 : 0, 5, dt);
+        //
+        // While being petted, the tracking INVERTS: the head turns away from
+        // the touch rather than toward it. A head under a hand does not lean
+        // into the hand — it leans away, the way weight shifts when something
+        // rests on it. Tracking toward the touch instead makes the character
+        // look like it is pushing the finger away, which is the opposite of
+        // what being petted should feel like. The blend between the two is
+        // petAmount, so lifting off eases back into following the cursor.
+        petX = damp(petX, petTargetX, 9, dt);
+        petY = damp(petY, petTargetY, 9, dt);
+        const followY = pointerActive ? pointerX * 0.32 : 0;
+        rig.head.rotation.y = damp(
+          rig.head.rotation.y,
+          lerp(followY, -petX * 0.22, petAmount),
+          5,
+          dt,
+        );
         // Recoil tilts the head back and away from the pat.
         rig.head.rotation.z = -recoil * 0.3;
-        rig.head.position.y = HEAD_BASE_Y + patAmount * 0.06 - recoil * 0.05;
+        rig.head.position.y =
+          HEAD_BASE_Y + patAmount * 0.06 - recoil * 0.05 - petAmount * 0.05;
       }
 
       // --- mouth ------------------------------------------------------
@@ -279,18 +384,33 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
         // the arms are — it has to hold for as long as they do.
         rig.head.rotation.x = damp(
           rig.head.rotation.x,
-          (quiet ? 0 : pointerActive ? -pointerY * 0.16 : 0) + hugAmount * 0.24,
+          lerp(
+            quiet ? 0 : pointerActive ? -pointerY * 0.16 : 0,
+            // Away from the touch: a stroke from above tips the head down
+            // toward the hand, one from below tips it up. The sign is
+            // inverted for the same reason the yaw is — leaning toward the
+            // touch reads as pushing it away.
+            petY * 0.16 + 0.12,
+            petAmount,
+          ) + hugAmount * 0.24,
           5,
           dt,
         );
 
-        // Ears flatten outward on the press. Unlike the eyes and blush, ears
-        // are spheres seen edge-on rather than flat plates laid on the skull,
-        // so a plain rotation is enough here — no surface normal to match.
-        // Driven off hugAmount, matching the arms and the head, so the whole
-        // pose arrives and leaves as one thing.
-        const earL = EAR.rest + (quiet ? 0 : Math.sin(elapsed * 2.3) * 0.06) + hugAmount * 0.3;
-        const earR = -EAR.rest - (quiet ? 0 : Math.sin(elapsed * 2.3 + 0.7) * 0.06) - hugAmount * 0.3;
+        // Ears flatten outward on the press, and PIN back while being petted.
+        // Unlike the eyes and blush, ears are spheres seen edge-on rather than
+        // flat plates laid on the skull, so a plain rotation is enough here —
+        // no surface normal to match.
+        //
+        // The pet term is a negative shift toward vertical, which is what
+        // makes the ears lie back rather than spread: a creature being stroked
+        // drops its ears, and pinning them back is the clearest whole-body
+        // signal that the touch registered.
+        const pet = petAmount * 0.4;
+        const earL =
+          EAR.rest + (quiet ? 0 : Math.sin(elapsed * 2.3) * 0.06) + hugAmount * 0.3 - pet;
+        const earR =
+          -EAR.rest - (quiet ? 0 : Math.sin(elapsed * 2.3 + 0.7) * 0.06) - hugAmount * 0.3 + pet;
         rig.earL.rotation.z = damp(rig.earL.rotation.z, earL, 6, dt);
         rig.earR.rotation.z = damp(rig.earR.rotation.z, earR, 6, dt);
       }
@@ -327,7 +447,13 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
     // Squashing the dome vertically closes the eye, the way a drawn eyelid
     // does. There is no iris to hide any more — the button eye is a single
     // form, so the whole thing squashing to a line is the blink.
-    const sy = Math.max(0.08, 1 - clamp(p, 0, 1));
+    //
+    // While being petted the eyes half-close as well, which reads as a
+    // contented squint. It is a scale on top of the blink, not a replacement
+    // for it: a stroke during a blink still has to close the eye fully, so
+    // the two are multiplied rather than one replacing the other.
+    const squint = 1 - petAmount * 0.3;
+    const sy = Math.max(0.08, (1 - clamp(p, 0, 1)) * squint);
     rig.eyeL.dome.scale.set(DOME.x, DOME.y * sy, DOME.z);
     rig.eyeR.dome.scale.set(DOME.x, DOME.y * sy, DOME.z);
     // The catchlight goes with it. Left at full size it would sit on the

@@ -7,7 +7,7 @@
  * zoom level where a 3D label would be an unreadable smear.
  */
 
-const HINTS = ["แตะหัว", "ลากท้อง", "คลิกพื้น"];
+const HINTS = ["แตะหัว", "ลูบหัว", "ลากท้อง", "คลิกพื้น"];
 
 export function createWordmark(): HTMLElement {
   const el = document.createElement("div");

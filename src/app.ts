@@ -92,7 +92,33 @@ export function createApp(host: HTMLElement): void {
   // or read the arm angles back. Read-only in practice; nothing in the app
   // reads it back, and it is one object holding references, not a copy of the
   // state.
-  (host as HTMLElement & { __thd?: unknown }).__thd = { bear, reactions, stage, hub };
+  (host as HTMLElement & { __thd?: unknown }).__thd = {
+    bear,
+    reactions,
+    stage,
+    hub,
+    /**
+     * Where a named rig part actually is on screen, in client pixels.
+     *
+     * An automated test cannot guess this: the part moves with the camera,
+     * the viewport and the animation, and every value hardcoded from a
+     * previous run is wrong by the time the layout changes. Projecting the
+     * mesh through the live camera is the only way to get a real target.
+     */
+    screenPoint(part: "head" | "belly") {
+      const mesh = part === "head" ? bear.rig.headHit : bear.rig.bellyHit;
+      const box = new THREE.Box3().setFromObject(mesh);
+      const centre = box.getCenter(new THREE.Vector3());
+      const projected = centre.clone().project(stage.camera);
+      const rect = stage.canvas.getBoundingClientRect();
+      return {
+        x: rect.left + ((projected.x + 1) / 2) * rect.width,
+        y: rect.top + ((1 - projected.y) / 2) * rect.height,
+        /** Half the projected width, for sizing a stroke that covers the part. */
+        radius: rect.width * 0.06,
+      };
+    },
+  };
 
   // --- teardown ---------------------------------------------------------
   // Exposed so a future hot-reload or SPA mount can unmount cleanly; also
