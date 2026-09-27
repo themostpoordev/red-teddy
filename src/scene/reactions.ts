@@ -67,16 +67,20 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
   /**
    * Petting.
    *
-   * Three values, because the gesture has three distinct parts and collapsing
-   * them is what makes a stroke read as a stutter rather than as a touch.
+   * Four values, because the gesture has several distinct parts and
+   * collapsing them is what makes a stroke read as a twitch rather than as a
+   * touch being enjoyed.
    *
    *   petAmount  how engaged the character is, 0..1. Rises on recognition of
    *              the stroke and decays after it ends, so the whole body eases
    *              into and out of being petted rather than snapping.
-   *   petX/petY  where the touch is, smoothed. The head leans AWAY from the
-   *              touch rather than toward it, which is what a head under a
-   *              hand actually does; leaning into it reads as the character
-   *              pushing the hand away.
+   *   petX/petY  where the touch is, smoothed. The head turns INTO the
+   *              stroke — an animal being stroked leans into the hand, and
+   *              leaning away reads as a flinch, which is exactly what it
+   *              looked like before this was corrected.
+   *   petSpeed   how fast the hand is travelling, which the head lags behind.
+   *              A head that tracks a hand perfectly is a cursor; a head
+   *              that trails it and catches up has weight.
    */
   let petAmount = 0;
   let petTargetX = 0;
@@ -84,6 +88,16 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
   let petX = 0;
   let petY = 0;
   let petHeartTimer = 0;
+  /**
+   * How fast the hand is currently travelling across the head, in normalised
+   * units per second.
+   *
+   * A stroke's speed is what the body should answer to. Move the hand slowly
+   * and the bear settles; move it quickly and the head lags and catches up,
+   * because a heavy head does not snap to follow a fast hand. Without this the
+   * head tracks the hand perfectly and reads as a cursor, not as weight.
+   */
+  let petSpeed = 0;
 
   /**
    * Seconds between hearts while being petted.
@@ -151,6 +165,9 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
     },
 
     petMove(x, y) {
+      // Smooth the target rather than snapping to it, so the speed derived
+      // from it is the speed of the HEAD and not the jitter of the raw event
+      // stream — a pointermove fires far more often than the display does.
       petTargetX = x;
       petTargetY = y;
     },
@@ -191,6 +208,9 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
         // would blink out of existence; this one is a long, easy release, and
         // the other reactions are layered on top of it while it fades.
         petAmount = Math.max(0, petAmount - dt * 0.7);
+        // Speed has to fall too, or a stroke that ends fast leaves the head
+        // lagging for as long as petAmount takes to fade.
+        petSpeed = Math.max(0, petSpeed - dt * 3);
       }
 
       // --- pet heartbeat -------------------------------------------------
@@ -246,10 +266,17 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
       // --- breathing --------------------------------------------------
       if (!quiet) {
         const breath = Math.sin(elapsed * 1.9) * 0.5 + 0.5;
+        // While being petted the breath deepens and the whole body goes
+        // slightly slack — wider, a touch lower. This is the cue that sells
+        // the gesture more than any of the others, because it is the only one
+        // that reads as a change in the CHARACTER rather than a change in a
+        // part. A head that turns and drops can be a head being looked at;
+        // a body that loosens while a hand moves over it is a body relaxing.
+        const melt = petAmount * 0.045;
         rig.body.scale.set(
-          1 + breath * 0.022,
-          1 + breath * 0.03,
-          1 + breath * 0.022,
+          1 + breath * 0.022 + melt,
+          1 + breath * 0.03 - melt * 0.6,
+          1 + breath * 0.022 + melt,
         );
         // The ears drift out of phase with the breath so the character never
         // moves as a single rigid block — but they are set further down,
@@ -267,17 +294,44 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
         // down to look, a pat recoils it. If nothing is happening, the head
         // is still, and stillness is what makes each of those read.
         //
-        // The pet direction is AWAY from the touch. A head under a hand does
-        // not lean into the hand; it leans away, the way weight shifts when
-        // something rests on it. Leaning toward it reads as the character
-        // pushing the finger away.
+        // The head turns TOWARD the touch, and that is the correction that
+        // matters most.
+        //
+        // It was originally built to lean away, on the reasoning that a head
+        // under a hand shifts weight away from it. That is how a head behaves
+        // under a hand that is RESTING on it — but nobody pets a bear by
+        // resting a hand on it. Petting is a repeated, moving touch, and an
+        // animal being stroked turns INTO it. A real bear leans its head
+        // into a stroke, presses up against the palm, and goes floppy and
+        // heavy. Leaning away is a flinch, and it read as one: the head
+        // twitched off to one side and sprang back, which looks exactly like
+        // a click rather than a touch.
+        //
+        // So: toward, and further than the touch itself, so the muzzle ends
+        // up under the hand rather than beside it.
         petX = damp(petX, petTargetX, 9, dt);
         petY = damp(petY, petTargetY, 9, dt);
-        rig.head.rotation.y = damp(rig.head.rotation.y, -petX * 0.22, 5, dt);
+
+        // How far the head still has to travel this frame, per second. This
+        // is the weight cue: on a fast stroke the head visibly trails the hand
+        // and catches up after it slows, which is what a heavy head does and
+        // what a directly-tracked one cannot.
+        const dx = petTargetX - petX;
+        const dy = petTargetY - petY;
+        const rawSpeed = dt > 0 ? Math.hypot(dx, dy) / dt : 0;
+        // Smoothed, because the raw figure spikes with every event and would
+        // make the head twitch rather than lean.
+        petSpeed = damp(petSpeed, rawSpeed, 8, dt);
+
+        // Lag the head behind a fast hand. The multiplier only bites once the
+        // hand is moving quickly, so a slow, careful stroke still tracks
+        // closely and a quick one drags the head along after it.
+        const lag = 1 - Math.min(petSpeed * 0.18, 0.5);
+        rig.head.rotation.y = damp(rig.head.rotation.y, petX * 0.38 * lag, 5, dt);
         // Recoil tilts the head back and away from the pat.
         rig.head.rotation.z = -recoil * 0.3;
         rig.head.position.y =
-          HEAD_BASE_Y + patAmount * 0.06 - recoil * 0.05 - petAmount * 0.05;
+          HEAD_BASE_Y + patAmount * 0.06 - recoil * 0.05 - petAmount * 0.07;
       }
 
       // --- mouth ------------------------------------------------------
@@ -372,34 +426,35 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
         setArm(rig.armL, -out, reach, dt);
         setArm(rig.armR, out, reach, dt);
 
-        // Head tips down to look at the belly it just had squashed. A
-        // positive rotation.x moves the crown toward +z, i.e. the face tips
-        // downward, which is the reading we want. Modest, so it stays a
-        // glance rather than a nod.
+        // Head tips DOWN and forward into the stroke, and the whole head
+        // settles lower.
         //
-        // Nothing here tracks the pointer either — see the head block above.
-        // The head moves for the pet and for the press, and otherwise holds
-        // still, so a touch is the only thing that can turn it.
+        // This is the part that makes it read as pleasure rather than as a
+        // twitch. A head that only turns is a head looking around; a head
+        // that tips down and drops while the hand moves over it is a head
+        // being stroked. The downward nod is small on its own, so it is
+        // reinforced two more ways that a turn alone cannot fake: the head
+        // sinks (see position.y above) and the eyes close further.
         rig.head.rotation.x = damp(
           rig.head.rotation.x,
-          // A pet tips the head toward the hand from whichever side the
-          // stroke came, and adds a small downward nod: being stroked is
-          // something the character leans into.
-          petAmount * (0.12 + petY * 0.16) + hugAmount * 0.24,
+          // Positive tips the face down. The petY term follows the hand up
+          // and down, so a stroke travelling downward drags the muzzle along
+          // with it rather than only tilting at a fixed angle.
+          petAmount * (0.26 + petY * 0.14) + hugAmount * 0.24,
           5,
           dt,
         );
 
-        // Ears flatten outward on the press, and PIN back while being petted.
-        // Unlike the eyes and blush, ears are spheres seen edge-on rather than
-        // flat plates laid on the skull, so a plain rotation is enough here —
-        // no surface normal to match.
+        // Ears flatten outward on the press, and go SOFT while being petted.
         //
-        // The pet term is a negative shift toward vertical, which is what
-        // makes the ears lie back rather than spread: a creature being stroked
-        // drops its ears, and pinning them back is the clearest whole-body
-        // signal that the touch registered.
-        const pet = petAmount * 0.4;
+        // The pet term pushes each ear past vertical and in the opposite
+        // direction, so they lie back against the head rather than standing
+        // at an angle. This is the single clearest whole-body signal that the
+        // touch registered: an alert animal's ears go up and forward, a
+        // contented one lets them drop. The press term is the opposite — ears
+        // out — so the two gestures are readable as different from the ears
+        // alone, without having to see the arms.
+        const pet = petAmount * 0.62;
         const earL =
           EAR.rest + (quiet ? 0 : Math.sin(elapsed * 2.3) * 0.06) + hugAmount * 0.3 - pet;
         const earR =
@@ -441,11 +496,17 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
     // does. There is no iris to hide any more — the button eye is a single
     // form, so the whole thing squashing to a line is the blink.
     //
-    // While being petted the eyes half-close as well, which reads as a
-    // contented squint. It is a scale on top of the blink, not a replacement
-    // for it: a stroke during a blink still has to close the eye fully, so
-    // the two are multiplied rather than one replacing the other.
-    const squint = 1 - petAmount * 0.3;
+    // While being petted the eyes close most of the way — not a blink, but
+    // the heavy half-shut look of an animal that has given up trying to stay
+    // alert. It is the loudest signal in the whole gesture and the cheapest:
+    // a scale on a mesh that already exists.
+    //
+    // 0.55 rather than something gentler, because a button eye at full size
+    // is a flat black disc and reads as an eye staring at you. Closing it to
+    // well under half turns the same shape into a curve, which is what a
+    // contented squint looks like. It multiplies with the blink rather than
+    // replacing it, so a stroke landing during a blink still shuts fully.
+    const squint = 1 - petAmount * 0.55;
     const sy = Math.max(0.08, (1 - clamp(p, 0, 1)) * squint);
     rig.eyeL.dome.scale.set(DOME.x, DOME.y * sy, DOME.z);
     rig.eyeR.dome.scale.set(DOME.x, DOME.y * sy, DOME.z);
