@@ -1,5 +1,9 @@
 /**
- * Materials: toon shading + inverted-hull outline.
+ * Style: toon shading, the palette, and the ink outline.
+ *
+ * Lives under bear/ rather than beside it because it is entirely the
+ * character's own visual language — the colour scheme and the line weight.
+ * Nothing in the stage, the ground or the particles shares it.
  *
  * The toon look comes from a 4x1 DataTexture used as MeshToonMaterial's
  * gradientMap. NearestFilter is the important part — it quantises the light
@@ -8,8 +12,8 @@
  *
  * The outline is an inverted hull: a second copy of each mesh, BackSide,
  * pushed out along its normals. It costs one extra draw call per part and
- * needs no full-screen pass, so it survives on a phone where a
- * post-process outline (a second render to a target plus a blur) would not.
+ * needs no full-screen pass, so it survives on a phone where a post-process
+ * outline (a second render to a target plus a blur) would not.
  */
 
 import * as THREE from "three";

@@ -13,7 +13,7 @@
 
 import * as THREE from "three";
 import type { PointerHub } from "../core/pointer";
-import type { Bear } from "./bear";
+import type { Bear } from "../bear";
 import type { Reactions } from "./reactions";
 import type { Stage } from "./stage";
 

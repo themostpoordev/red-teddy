@@ -20,7 +20,7 @@ import { createPointerHub } from "./core/pointer";
 import { createStage } from "./scene/stage";
 import { createLighting } from "./scene/lighting";
 import { createGround } from "./scene/ground";
-import { createBear } from "./scene/bear";
+import { createBear } from "./bear";
 import { createHearts } from "./scene/hearts";
 import { createReactions } from "./scene/reactions";
 import { createInteractions } from "./scene/interactions";

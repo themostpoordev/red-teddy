@@ -13,7 +13,7 @@
 
 import * as THREE from "three";
 import { clamp, damp } from "../core/math";
-import type { Bear } from "./bear";
+import type { Bear } from "../bear";
 import type { Hearts } from "./hearts";
 
 export type Reactions = {
@@ -150,9 +150,9 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
       if (!quiet) {
         // The head is the only thing that tracks the pointer now. Keeping the
         // angle modest is what keeps it reading as a look rather than the
-        // whole character swivelling at the cursor.
+        // whole character swivelling at the cursor. The belly-press tip is
+        // added to this further down, where the arms are set up.
         rig.head.rotation.y = damp(rig.head.rotation.y, pointerActive ? pointerX * 0.32 : 0, 5, dt);
-        rig.head.rotation.x = damp(rig.head.rotation.x, pointerActive ? -pointerY * 0.16 : 0, 5, dt);
         // Recoil tilts the head back and away from the pat.
         rig.head.rotation.z = -recoil * 0.3;
         rig.head.position.y = HEAD_BASE_Y + patAmount * 0.06 - recoil * 0.05;
@@ -199,29 +199,89 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
         // the torso, which is what they did.
         //
         // The rest angle is the rig's own, chosen so the paw clears the torso.
-        // This only adds a small breathing swing and the pat's lift on top;
-        // a second hardcoded rest value here would drift out of sync with the
+        // A second hardcoded rest value here would drift out of sync with the
         // rig the moment either side is retuned, and the paw would sink back
         // into the body.
+        //
+        // Sign discipline, because getting this backwards is invisible in the
+        // code and obvious on screen — the user saw the arms fold into each
+        // other. A limb hanging at (0, -d) from its pivot swings toward +x
+        // under a positive rotation.z, and again toward +z under a positive
+        // rotation.x. So for any signed swing s:
+        //
+        //   armL (at negative x) needs  -s  to go further left / further out
+        //   armR (at positive x) needs  +s  to go further right / further out
+        //
+        // setArm() owns the mirror so no call site can get it wrong, and the
+        // breathing swing is applied with the correct sign per side. The old
+        // code pushed the same `swing` into both arms and then negated the
+        // whole sum for the left, which meant the two arms swung in OPPOSITE
+        // directions at all times — the bear was permanently shimmying.
         const swing = Math.sin(elapsed * 1.9) * 0.03;
+
+        // A belly press is a different gesture from a head pat, so it moves
+        // the arms the opposite way: the pat throws them UP, the press brings
+        // them DOWN and INWARD onto the belly. Both decay to zero, so whichever
+        // is active simply wins and the other blends out.
+        //
+        // Reaching forward is a negative rotation.x — a positive one swings a
+        // downward limb away from the camera.
+        const press = squashAmount;
         const lift = patAmount * 0.85;
+        const outward = ARM_BASE_Z * (1 - press * 0.45);
+        const vertical = lift - press * 0.5;
+        const reach = -lift * 0.7 - press * 0.3;
 
-        rig.armL.rotation.z = damp(rig.armL.rotation.z, -(ARM_BASE_Z + swing + lift), 7, dt);
-        rig.armR.rotation.z = damp(rig.armR.rotation.z, ARM_BASE_Z + swing + lift, 7, dt);
+        setArm(rig.armL, -(outward + swing) - vertical, reach, dt);
+        setArm(rig.armR, outward + swing + vertical, reach, dt);
 
-        // rotation.x is the forward reach. A positive x rotation sends a
-        // downward limb toward -z, i.e. away from the camera, so reaching
-        // toward the viewer is the negative direction.
-        rig.armL.rotation.x = damp(rig.armL.rotation.x, -lift * 0.7, 7, dt);
-        rig.armR.rotation.x = damp(rig.armR.rotation.x, -lift * 0.7, 7, dt);
+        // Head tips down to look at the belly it just had squashed. A
+        // positive rotation.x moves the crown toward +z, i.e. the face tips
+        // downward, which is the reading we want. Modest, so it stays a
+        // glance rather than a nod.
+        rig.head.rotation.x = damp(
+          rig.head.rotation.x,
+          (quiet ? 0 : pointerActive ? -pointerY * 0.16 : 0) + press * 0.24,
+          5,
+          dt,
+        );
+
+        // Ears flatten outward on the press. Unlike the eyes and blush, ears
+        // are spheres seen edge-on rather than flat plates laid on the skull,
+        // so a plain rotation is enough here — no surface normal to match.
+        const earL = 0.22 + (quiet ? 0 : Math.sin(elapsed * 2.3) * 0.06) + press * 0.3;
+        const earR = -0.22 - (quiet ? 0 : Math.sin(elapsed * 2.3 + 0.7) * 0.06) - press * 0.3;
+        rig.earL.rotation.z = damp(rig.earL.rotation.z, earL, 6, dt);
+        rig.earR.rotation.z = damp(rig.earR.rotation.z, earR, 6, dt);
       }
     },
   };
 
-  /** Resting size of the eye dome, read from the rig so the blink can scale
+  /**
+   * Resting size of the eye dome, read from the rig so the blink can scale
    *  it back to exactly what it was. Hardcoding a second copy would drift the
    *  moment the eye is retuned. */
   const DOME = rig.eyeL.dome.scale.clone();
+
+  /**
+   * Aims one arm. The z angle is the outward swing and the x angle the forward
+   * reach, both passed in already signed for THIS side.
+   *
+   * Kept as one function so the two arms cannot drift apart: every call site
+   * supplies the magnitude and the helper owns the mirror, rather than each
+   * call site writing its own negation and one of them being wrong. That is
+   * exactly how the arms came to fold into each other — the two sides were
+   * spelled out independently and one sign was inverted.
+   */
+  function setArm(
+    arm: THREE.Group,
+    outZ: number,
+    reachX: number,
+    dt: number,
+  ): void {
+    arm.rotation.z = damp(arm.rotation.z, outZ, 7, dt);
+    arm.rotation.x = damp(arm.rotation.x, reachX, 7, dt);
+  }
 
   function setBlink(p: number): void {
     // Squashing the dome vertically closes the eye, the way a drawn eyelid
