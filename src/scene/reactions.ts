@@ -18,7 +18,7 @@ import type { Bear } from "../bear";
 import type { Hearts } from "./hearts";
 
 export type Reactions = {
-  update(dt: number, elapsed: number, pointerActive: boolean, pointerX: number, pointerY: number): void;
+  update(dt: number, elapsed: number): void;
   /** Head pat: a quick tap. Hearts, a small recoil. */
   pat(): void;
   /** Belly squeeze: the belly squashes and springs back. */
@@ -171,7 +171,7 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
       hopT = 0;
     },
 
-    update(dt, elapsed, pointerActive, pointerX, pointerY) {
+    update(dt, elapsed) {
       const quiet = self.reducedMotion;
 
       // --- decay ------------------------------------------------------
@@ -256,29 +256,24 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
         // together with the press offset, so the whole pose is written once.
       }
 
-      // --- head follow ------------------------------------------------
+      // --- head --------------------------------------------------------
       if (!quiet) {
-        // The head is the only thing that tracks the pointer now. Keeping the
-        // angle modest is what keeps it reading as a look rather than the
-        // whole character swivelling at the cursor. The belly-press tip is
-        // added to this further down, where the arms are set up.
+        // The head does NOT follow the pointer. It used to, and that was the
+        // single thing standing between the character and reading as a toy:
+        // the head moved whether or not anyone touched it, so every reaction
+        // had to compete with a constant idle motion, and a pat landed on a
+        // head that was already swinging away. Nothing moves it now except a
+        // touch — a pet leans it away from the hand, a belly press tips it
+        // down to look, a pat recoils it. If nothing is happening, the head
+        // is still, and stillness is what makes each of those read.
         //
-        // While being petted, the tracking INVERTS: the head turns away from
-        // the touch rather than toward it. A head under a hand does not lean
-        // into the hand — it leans away, the way weight shifts when something
-        // rests on it. Tracking toward the touch instead makes the character
-        // look like it is pushing the finger away, which is the opposite of
-        // what being petted should feel like. The blend between the two is
-        // petAmount, so lifting off eases back into following the cursor.
+        // The pet direction is AWAY from the touch. A head under a hand does
+        // not lean into the hand; it leans away, the way weight shifts when
+        // something rests on it. Leaning toward it reads as the character
+        // pushing the finger away.
         petX = damp(petX, petTargetX, 9, dt);
         petY = damp(petY, petTargetY, 9, dt);
-        const followY = pointerActive ? pointerX * 0.32 : 0;
-        rig.head.rotation.y = damp(
-          rig.head.rotation.y,
-          lerp(followY, -petX * 0.22, petAmount),
-          5,
-          dt,
-        );
+        rig.head.rotation.y = damp(rig.head.rotation.y, -petX * 0.22, 5, dt);
         // Recoil tilts the head back and away from the pat.
         rig.head.rotation.z = -recoil * 0.3;
         rig.head.position.y =
@@ -380,19 +375,17 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
         // Head tips down to look at the belly it just had squashed. A
         // positive rotation.x moves the crown toward +z, i.e. the face tips
         // downward, which is the reading we want. Modest, so it stays a
-        // glance rather than a nod. Driven off hugAmount for the same reason
-        // the arms are — it has to hold for as long as they do.
+        // glance rather than a nod.
+        //
+        // Nothing here tracks the pointer either — see the head block above.
+        // The head moves for the pet and for the press, and otherwise holds
+        // still, so a touch is the only thing that can turn it.
         rig.head.rotation.x = damp(
           rig.head.rotation.x,
-          lerp(
-            quiet ? 0 : pointerActive ? -pointerY * 0.16 : 0,
-            // Away from the touch: a stroke from above tips the head down
-            // toward the hand, one from below tips it up. The sign is
-            // inverted for the same reason the yaw is — leaning toward the
-            // touch reads as pushing it away.
-            petY * 0.16 + 0.12,
-            petAmount,
-          ) + hugAmount * 0.24,
+          // A pet tips the head toward the hand from whichever side the
+          // stroke came, and adds a small downward nod: being stroked is
+          // something the character leans into.
+          petAmount * (0.12 + petY * 0.16) + hugAmount * 0.24,
           5,
           dt,
         );

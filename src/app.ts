@@ -63,9 +63,7 @@ export function createApp(host: HTMLElement): void {
   const lookTarget = new THREE.Vector3();
 
   stage.onFrame((dt, elapsed) => {
-    hub.sampleVelocity(dt);
-
-    reactions.update(dt, elapsed, hub.pointer.active, hub.pointer.x, hub.pointer.y);
+    reactions.update(dt, elapsed);
     hearts.update(dt);
 
     // Track the head rather than the root, so the contact shadow and the
@@ -73,16 +71,6 @@ export function createApp(host: HTMLElement): void {
     bear.rig.head.getWorldPosition(lookTarget);
     ground.update(bear.rig.root.position, bear.height);
     lighting.follow(lookTarget);
-
-    // A gentle counter-lean makes the character feel like it has weight:
-    // the body tips against the direction it is being pulled.
-    if (!reactions.reducedMotion) {
-      bear.rig.body.rotation.z = THREE.MathUtils.lerp(
-        bear.rig.body.rotation.z,
-        -hub.pointer.vx * 0.035,
-        1 - Math.exp(-6 * dt),
-      );
-    }
   });
 
   stage.start();

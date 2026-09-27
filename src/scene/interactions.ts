@@ -44,14 +44,20 @@ import type { Stage } from "./stage";
 const HOP_RADIUS = 1.9;
 
 /**
- * Screen fraction of the canvas width a press must travel before it counts as
- * a pet rather than a tap.
+ * How far a press must travel, as a fraction of the HEAD's own width.
  *
- * A tenth is deliberate: enough that a finger resting and wobbling a little
- * still registers as a tap, and small enough that a genuine stroke — which
- * crosses most of the head — reaches it in a fraction of a second.
+ * A fraction of the canvas was the obvious choice and it is wrong: the canvas
+ * aspect ratio changes with the viewport, so the same fraction meant 35% of
+ * the head on a wide desktop and 10% of it on a tall phone. A tap with a
+ * little finger wobble cleared the bar on desktop — so every tap was a pet —
+ * while a real stroke on a phone fell under it, so no stroke was ever
+ * recognised. The feature was therefore inert in both directions, on devices
+ * that were not the one it was tuned on.
+ *
+ * The head's real width is measured instead, by projecting the two sides of
+ * its bounding box through the live camera. See petDistancePx().
  */
-const PET_DISTANCE = 0.1;
+const PET_DISTANCE = 0.22;
 
 export type Interactions = {
   dispose(): void;
@@ -92,15 +98,34 @@ export function createInteractions(
   /**
    * How many pixels the pointer must cover to count as a stroke.
    *
-   * Read from the canvas rather than the head mesh, because a THREE.Mesh has
-   * no DOM box — its screen extent is only available by projecting its
-   * corners through the camera, which is more machinery than the threshold
-   * deserves. The canvas is a fine proxy: the head occupies a fixed slice of
-   * it, so a fraction of the canvas width is a fraction of the head, and it
-   * scales correctly with the viewport either way.
+   * Measured from the head's real width on screen, projected through the live
+   * camera rather than read off the canvas — see the note on PET_DISTANCE for
+   * why a canvas fraction cannot work. Falls back to a canvas fraction if the
+   * projection comes back degenerate, which would otherwise make the
+   * threshold zero and classify every tap as a pet.
    */
   function petDistancePx(): number {
-    return (stage.canvas.clientWidth || window.innerWidth) * PET_DISTANCE;
+    const box = new THREE.Box3().setFromObject(bear.rig.headHit);
+    // Project the box's two horizontal extremes onto the screen and take the
+    // distance between them. Using the box rather than the raw scale keeps
+    // this correct if the head is ever resized or re-proportioned.
+    const centre = box.getCenter(new THREE.Vector3());
+    let minX = Infinity;
+    let maxX = -Infinity;
+    for (const x of [box.min.x, box.max.x]) {
+      const projected = new THREE.Vector3(x, centre.y, centre.z).project(
+        stage.camera,
+      );
+      if (!Number.isFinite(projected.x)) continue;
+      const screenX = ((projected.x + 1) / 2) * stage.canvas.clientWidth;
+      if (screenX < minX) minX = screenX;
+      if (screenX > maxX) maxX = screenX;
+    }
+    const headWidth = maxX - minX;
+    if (!Number.isFinite(headWidth) || headWidth <= 0) {
+      return stage.canvas.clientWidth * 0.1;
+    }
+    return headWidth * PET_DISTANCE;
   }
 
   function intersectFloor(): THREE.Vector3 | null {

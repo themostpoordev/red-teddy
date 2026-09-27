@@ -21,9 +21,6 @@ export type Pointer = {
   clientY: number;
   /** True while a primary-button press or touch contact is active. */
   down: boolean;
-  /** Movement since the previous frame, in NDC units per second. */
-  vx: number;
-  vy: number;
   /** True once the pointer has produced at least one event. */
   active: boolean;
 };
@@ -36,11 +33,6 @@ export type PointerHub = {
   onDrag(fn: (p: Pointer, ev: PointerEvent) => void): () => void;
   /** Registers a release callback. */
   onRelease(fn: (p: Pointer, ev: PointerEvent) => void): () => void;
-  /**
-   * Computes velocity from the position change since the previous call.
-   * Invoke once per frame, before anything reads `vx` / `vy`.
-   */
-  sampleVelocity(dt: number): void;
   /** NDC vector for the current pointer position, for raycasting. */
   ndc(target: THREE.Vector2): THREE.Vector2;
   dispose(): void;
@@ -53,21 +45,12 @@ export function createPointerHub(target: HTMLElement): PointerHub {
     clientX: 0,
     clientY: 0,
     down: false,
-    vx: 0,
-    vy: 0,
     active: false,
   };
 
   const pressHandlers = new Set<(p: Pointer, ev: PointerEvent) => void>();
   const dragHandlers = new Set<(p: Pointer, ev: PointerEvent) => void>();
   const releaseHandlers = new Set<(p: Pointer, ev: PointerEvent) => void>();
-
-  // Velocity is computed in the frame loop from the last two positions, not
-  // per event: a pointermove stream fires far faster than the display does, so
-  // differentiating raw events measures input rate, not visible speed.
-  let prevX = 0;
-  let prevY = 0;
-  let hasPrev = false;
 
   function setFromEvent(ev: PointerEvent): void {
     const rect = target.getBoundingClientRect();
@@ -77,11 +60,6 @@ export function createPointerHub(target: HTMLElement): PointerHub {
     pointer.clientY = ev.clientY;
     pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
     pointer.y = -(((ev.clientY - rect.top) / rect.height) * 2 - 1);
-    if (!pointer.active) {
-      prevX = pointer.x;
-      prevY = pointer.y;
-      hasPrev = true;
-    }
     pointer.active = true;
   }
 
@@ -108,7 +86,6 @@ export function createPointerHub(target: HTMLElement): PointerHub {
 
   function handleLeave(): void {
     pointer.active = false;
-    hasPrev = false;
   }
 
   target.addEventListener("pointerdown", handleDown);
@@ -131,19 +108,6 @@ export function createPointerHub(target: HTMLElement): PointerHub {
     onRelease(fn) {
       releaseHandlers.add(fn);
       return () => releaseHandlers.delete(fn);
-    },
-
-    /** Call once per frame, before consumers read `vx` / `vy`. */
-    sampleVelocity(dt: number) {
-      if (!hasPrev || dt <= 0) {
-        pointer.vx = 0;
-        pointer.vy = 0;
-        return;
-      }
-      pointer.vx = (pointer.x - prevX) / dt;
-      pointer.vy = (pointer.y - prevY) / dt;
-      prevX = pointer.x;
-      prevY = pointer.y;
     },
 
     ndc(out) {
