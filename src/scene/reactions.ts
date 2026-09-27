@@ -200,10 +200,34 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
     },
 
     petEnd() {
-      // Deliberately does nothing to petAmount. It decays on its own in the
-      // update loop, so lifting the finger lets the character ease out of the
-      // gesture instead of dropping out of it — a hard cut reads as the
-      // touch being taken away.
+      // Clear the level on release, and clear it hard.
+      //
+      // It used to be left to decay, on the theory that a slow fade reads
+      // as easing. But petMove re-asserts this on every move, so it is a
+      // latch and not a pulse — and a latch left to a timer stays set. The
+      // head went on turning toward where the hand had been, carrying
+      // further past it, long after the hand was gone.
+      //
+      // The easing is not lost, only moved: the target goes to zero here
+      // and the spring walks the head home, so the return is still a settle
+      // rather than a cut. The rate below governs how fast everything
+      // OTHER than the head comes back — the ears, the eyes, the body — and
+      // the spring governs the head.
+      petAmount = 0;
+      petSpeed = 0;
+      // The spring's momentum has to go, but its position does not. Zeroing
+      // the angle too would snap the head dead centre; zeroing only the
+      // velocity leaves the head wherever the stroke left it and lets the
+      // spring walk it home. Leaving the velocity in, though, is what made
+      // the head shiver around zero indefinitely rather than settle — a
+      // spring released mid-motion swings through centre and comes back.
+      petSpringVelocity = 0;
+      // The hand's remembered position goes, so the next stroke starts from
+      // centre rather than swinging across from wherever the last one ended.
+      petTargetX = 0;
+      petTargetY = 0;
+      petX = 0;
+      petY = 0;
     },
 
     hopTo(target: THREE.Vector3) {
@@ -231,15 +255,12 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
         squashAmount = Math.max(0, squashAmount - dt * 2.6);
         recoil = Math.max(0, recoil - dt * 3.2);
         hugAmount = Math.max(0, hugAmount - dt * 0.85);
-        // A long release. 0.7 put the whole gesture out in about 1.4s, which
-        // is too short for a stroke to read as sustained — the head would
-        // have faded before a slow pet had finished crossing the skull. At
-        // 0.3 it holds for roughly three seconds, so the character stays
-        // melted for as long as the hand is on it and eases out afterwards.
-        petAmount = Math.max(0, petAmount - dt * 0.3);
-        // Speed falls faster than the amount, since it is derived from motion
-        // and there is no motion once the hand has gone.
-        petSpeed = Math.max(0, petSpeed - dt * 3);
+        // petAmount and petSpeed are NOT decayed here. petMove re-asserts
+        // petAmount on every move of the stroke, and petEnd clears it on
+        // release, so a timer between those two points does no work — it only
+        // risks a half-released pose if a release is ever missed. The head's
+        // own return is the spring's job; everything else is gated on
+        // petAmount, which is already exactly 1 or exactly 0.
       }
 
       // --- pet heartbeat -------------------------------------------------
@@ -383,17 +404,52 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
         // carries the head home on its own momentum — which is why a release
         // eases back rather than snapping.
         //
-        // Stiffness and damping are the standard pair. 26/7 is a soft,
-        // floaty spring — pleasant for a one-off nudge, but it could not
-        // keep up with a hand that never stopped moving, so the head
-        // trailed the stroke by most of its width. 60/14 is roughly twice as
-        // stiff with the damping raised in proportion, which keeps the same
-        // overshoot ratio while arriving in about a third of the time. Raise
-        // the first without the second and it visibly oscillates; the ratio
-        // is what has to be held.
-        const error = target - petSpringAngle;
-        petSpringVelocity += (error * 60 - petSpringVelocity * 14) * dt;
-        petSpringAngle += petSpringVelocity * dt;
+        // Stiffness and damping, chosen together rather than one at a time.
+        //
+        // At 60/14 this was far past what the damping could absorb. The
+        // spring's natural period works out at 0.81s while its damping
+        // half-life is 0.10s, so the head rang through roughly eight visible
+        // oscillations before it settled. That is what a release looked
+        // like — not a slow drift home but a head that overshot, wobbled,
+        // and appeared to stick partway.
+        //
+        // Critical damping is c = 2·sqrt(k): the fastest return that does not
+        // overshoot at all. At k = 90 that is c ≈ 19. Sitting slightly under
+        // it, at 17, leaves one small overshoot on the way home — enough to
+        // read as mass, small enough not to wobble. A release is a single
+        // confident settle, not a shiver.
+        //
+        // A release is a faster spring than an arrival. Same constants while
+        // the hand is on the head, so the arrival keeps its weight; once
+        // petAmount is 0 the target is zero and the head should get there
+        // promptly. The release is faster, not instant — a settle, not a cut.
+        //
+        // Integrated in substeps, and this is not an optimisation. An explicit
+        // spring at k = 90 is only stable while dt stays under about 1/9s,
+        // and a tab that has been backgrounded, a slow frame, or a heavy
+        // moment on a phone can all exceed that — the ticker clamps to 1/20s,
+        // which is already past the limit for the release spring. Once a
+        // spring goes unstable it never recovers: the value grows, the
+        // correction grows with it, and the head shivers around zero forever
+        // instead of settling. That is exactly the symptom this replaces.
+        //
+        // Substepping at a fixed 1/120s keeps every step well inside the
+        // limit regardless of the frame rate, and costs a handful of scalar
+        // multiplies — nothing next to the rest of the frame.
+        const released = petAmount <= 0.01;
+        const k = released ? 270 : 90;
+        const c = released ? 33 : 17;
+
+        const STEP = 1 / 120;
+        let remaining = dt;
+        while (remaining > 0) {
+          const step = Math.min(STEP, remaining);
+          remaining -= step;
+          const error = target - petSpringAngle;
+          petSpringVelocity += (error * k - petSpringVelocity * c) * step;
+          petSpringAngle += petSpringVelocity * step;
+        }
+
         rig.head.rotation.y = petSpringAngle;
         // Recoil tilts the head back and away from the pat.
         rig.head.rotation.z = -recoil * 0.3;
