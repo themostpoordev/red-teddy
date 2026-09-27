@@ -87,6 +87,13 @@ export function createApp(host: HTMLElement): void {
 
   stage.start();
 
+  // Exposed for testing. The reactions are otherwise unreachable from outside
+  // the closure, so an automated check cannot tell which gesture a tap fired
+  // or read the arm angles back. Read-only in practice; nothing in the app
+  // reads it back, and it is one object holding references, not a copy of the
+  // state.
+  (host as HTMLElement & { __thd?: unknown }).__thd = { bear, reactions, stage, hub };
+
   // --- teardown ---------------------------------------------------------
   // Exposed so a future hot-reload or SPA mount can unmount cleanly; also
   // what the dev server's HMR dispose hook calls.

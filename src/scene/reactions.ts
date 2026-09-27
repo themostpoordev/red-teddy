@@ -12,7 +12,8 @@
  */
 
 import * as THREE from "three";
-import { clamp, damp } from "../core/math";
+import { clamp, damp, lerp } from "../core/math";
+import { ARM_PRESS, EAR } from "../bear/proportions";
 import type { Bear } from "../bear";
 import type { Hearts } from "./hearts";
 
@@ -35,6 +36,19 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
   let patAmount = 0;
   let squashAmount = 0;
   let recoil = 0;
+
+  /**
+   * How far the arms have travelled toward the hug, tracked separately from
+   * how squashed the belly is.
+   *
+   * They cannot be the same value. The belly has to spring back fast or the
+   * deformation lingers and reads as damage, but the arms were originally
+   * driven off that same number — and because the arms damp toward their
+   * target, they were still in transit when the belly had already recovered.
+   * Traced, they peaked at 8% of the travel and turned around, so the hug
+   * never happened at all. The arms need a slower release than the belly has.
+   */
+  let hugAmount = 0;
 
   // --- blink ----------------------------------------------------------
   // Blinks land on a randomised schedule rather than a fixed period, which is
@@ -79,6 +93,9 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
 
     squash() {
       squashAmount = 1;
+      // The arms commit on the same frame. See hugAmount for why this is a
+      // separate value and not just the belly's amount reused.
+      hugAmount = 1;
     },
 
     hopTo(target: THREE.Vector3) {
@@ -96,10 +113,16 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
       // --- decay ------------------------------------------------------
       // patAmount lifts the head and raises the arms; it should linger
       // slightly longer than the recoil it triggers.
+      //
+      // hugAmount rises instantly on the press — the arms should commit to the
+      // gesture, not drift into it — and falls at roughly a third of the
+      // belly's rate, so they hold long enough to arrive and then let go
+      // slowly. The mismatch is deliberate; see the declaration.
       if (!quiet) {
         patAmount = Math.max(0, patAmount - dt * 0.8);
         squashAmount = Math.max(0, squashAmount - dt * 2.6);
         recoil = Math.max(0, recoil - dt * 3.2);
+        hugAmount = Math.max(0, hugAmount - dt * 0.85);
       }
 
       // --- gaze -------------------------------------------------------
@@ -140,10 +163,9 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
           1 + breath * 0.03,
           1 + breath * 0.022,
         );
-        // Ears drift out of phase with the breath so the character never
-        // moves as a single rigid block.
-        rig.earL.rotation.z = 0.22 + Math.sin(elapsed * 2.3) * 0.06;
-        rig.earR.rotation.z = -0.22 - Math.sin(elapsed * 2.3 + 0.7) * 0.06;
+        // The ears drift out of phase with the breath so the character never
+        // moves as a single rigid block — but they are set further down,
+        // together with the press offset, so the whole pose is written once.
       }
 
       // --- head follow ------------------------------------------------
@@ -220,28 +242,44 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
         const swing = Math.sin(elapsed * 1.9) * 0.03;
 
         // A belly press is a different gesture from a head pat, so it moves
-        // the arms the opposite way: the pat throws them UP, the press brings
-        // them DOWN and INWARD onto the belly. Both decay to zero, so whichever
-        // is active simply wins and the other blends out.
+        // the arms the opposite way: the pat throws them UP, the press folds
+        // them INWARD until the paws rest on the belly. Both decay to zero, so
+        // whichever is active simply wins and the other blends out.
         //
-        // Reaching forward is a negative rotation.x — a positive one swings a
-        // downward limb away from the camera.
-        const press = squashAmount;
+        // The press angles are SOLVED, not tuned by eye — see ARM_PRESS. A paw
+        // is 0.66 from the shoulder but the front of the belly is 0.87 away,
+        // so a head-on hug is impossible; the solution lands the paws on the
+        // belly's side. Writing the angles here instead of importing them
+        // would put these numbers back to being guesses.
+        //
+        // hugAmount, not squashAmount — see its declaration. Driving the arms
+        // off the belly's amount meant they were still travelling when the
+        // belly had already sprung back, so they never arrived.
         const lift = patAmount * 0.85;
-        const outward = ARM_BASE_Z * (1 - press * 0.45);
-        const vertical = lift - press * 0.5;
-        const reach = -lift * 0.7 - press * 0.3;
+        const breathe = swing * (1 - hugAmount);
 
-        setArm(rig.armL, -(outward + swing) - vertical, reach, dt);
-        setArm(rig.armR, outward + swing + vertical, reach, dt);
+        // Lerp between the loose and firm solutions rather than snapping to
+        // one, so the paws settle onto the belly instead of arriving there.
+        const hugOut = lerp(ARM_PRESS.outLoose, ARM_PRESS.out, hugAmount);
+        const hugReach = lerp(ARM_PRESS.reachLoose, ARM_PRESS.reach, hugAmount);
+
+        // Resting pose. A downward limb swings toward +x under a positive z
+        // rotation, so the right arm's outward swing is positive and the left
+        // is its mirror.
+        const out = lerp(ARM_BASE_Z, hugOut, hugAmount) + breathe + lift * 0.9;
+        const reach = lerp(0, hugReach, hugAmount) - lift * 0.7;
+
+        setArm(rig.armL, -out, reach, dt);
+        setArm(rig.armR, out, reach, dt);
 
         // Head tips down to look at the belly it just had squashed. A
         // positive rotation.x moves the crown toward +z, i.e. the face tips
         // downward, which is the reading we want. Modest, so it stays a
-        // glance rather than a nod.
+        // glance rather than a nod. Driven off hugAmount for the same reason
+        // the arms are — it has to hold for as long as they do.
         rig.head.rotation.x = damp(
           rig.head.rotation.x,
-          (quiet ? 0 : pointerActive ? -pointerY * 0.16 : 0) + press * 0.24,
+          (quiet ? 0 : pointerActive ? -pointerY * 0.16 : 0) + hugAmount * 0.24,
           5,
           dt,
         );
@@ -249,8 +287,10 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
         // Ears flatten outward on the press. Unlike the eyes and blush, ears
         // are spheres seen edge-on rather than flat plates laid on the skull,
         // so a plain rotation is enough here — no surface normal to match.
-        const earL = 0.22 + (quiet ? 0 : Math.sin(elapsed * 2.3) * 0.06) + press * 0.3;
-        const earR = -0.22 - (quiet ? 0 : Math.sin(elapsed * 2.3 + 0.7) * 0.06) - press * 0.3;
+        // Driven off hugAmount, matching the arms and the head, so the whole
+        // pose arrives and leaves as one thing.
+        const earL = EAR.rest + (quiet ? 0 : Math.sin(elapsed * 2.3) * 0.06) + hugAmount * 0.3;
+        const earR = -EAR.rest - (quiet ? 0 : Math.sin(elapsed * 2.3 + 0.7) * 0.06) - hugAmount * 0.3;
         rig.earL.rotation.z = damp(rig.earL.rotation.z, earL, 6, dt);
         rig.earR.rotation.z = damp(rig.earR.rotation.z, earR, 6, dt);
       }

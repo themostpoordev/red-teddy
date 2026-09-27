@@ -213,6 +213,34 @@ export const ARM = {
   pawAt: [0, -0.66, 0.02] as const,
 } as const;
 
+/**
+ * The belly press: both arms fold inward until the paws rest on the belly.
+ *
+ * These are SOLVED values, not chosen ones. A paw is 0.66 from the shoulder,
+ * but the front of the belly is at z = 0.84 while the shoulder sits at
+ * z = 0.16 — 0.87 away. The arm is 0.21 too short to reach the belly head-on,
+ * so a full front hug is geometrically impossible and the gesture has to
+ * land on the belly's SIDE, where the surface curves back toward the arm.
+ *
+ * For that target the pose is found by scanning (z, x) rotations for the paw
+ * position that sits on the belly surface, then checking the arm's midpoint
+ * against the torso so the limb does not pass through the body on the way.
+ * The result puts the paw at roughly (0.46, 1.08) — mid-belly, and clear of
+ * the chest, which is why it reads as a hug rather than as covering the face.
+ *
+ * The other two numbers are the extremes of the same solution, kept so the
+ * press can overshoot and settle instead of snapping to a single pose.
+ */
+export const ARM_PRESS = {
+  /** Outward swing at full press. Negative = folded inward, toward the body. */
+  out: -0.24,
+  /** Forward reach at full press. A large negative folds the arm up. */
+  reach: -1.15,
+  /** Same, at the shallowest solution — the overshoot on the way in. */
+  outLoose: -0.19,
+  reachLoose: -0.96,
+} as const;
+
 /** Legs and feet. Feet read as feet because they are wider in z than the leg. */
 export const LEG = {
   at: [0.3, 0.5, 0.02] as const,
