@@ -98,6 +98,22 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
    * head tracks the hand perfectly and reads as a cursor, not as weight.
    */
   let petSpeed = 0;
+  /**
+   * The head's yaw, integrated as a spring rather than eased toward a target.
+   *
+   * `petSpringAngle` is the value itself and `petSpringVelocity` its rate, so
+   * the two carry the head's momentum between frames. An exponential damp has
+   * no memory of how fast something was already going, which is why a head
+   * driven by one arrives and stops dead at the hand — it looks like a servo
+   * rather than like something with weight.
+   *
+   * Kept separate from petX on purpose: petX is where the hand IS, and the
+   * head does not need to be there. Letting the two diverge for a few frames
+   * is what produces the carry-past-and-settle that reads as a heavy head
+   * being stroked.
+   */
+  let petSpringAngle = 0;
+  let petSpringVelocity = 0;
 
   /**
    * Seconds between hearts while being petted.
@@ -165,9 +181,20 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
     },
 
     petMove(x, y) {
-      // Smooth the target rather than snapping to it, so the speed derived
-      // from it is the speed of the HEAD and not the jitter of the raw event
-      // stream — a pointermove fires far more often than the display does.
+      // Re-assert the level on every move, not just once at petBegin.
+      //
+      // This is what was making the response feel weak. The gesture was a
+      // single impulse that then decayed, so the bear lit up for a moment
+      // and faded over the next second and a half — but a stroke does not
+      // work that way. The hand is still on the head, still moving, and the
+      // character should still be responding for as long as it is. Holding
+      // the level up here means the response is sustained by the contact
+      // itself: pause your hand and it eases, keep stroking and it stays.
+      //
+      // The decay still runs, and still matters — it is what carries the
+      // release once the hand leaves, and what lets a momentary gap during a
+      // stroke relax rather than snap.
+      petAmount = 1;
       petTargetX = x;
       petTargetY = y;
     },
@@ -204,12 +231,14 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
         squashAmount = Math.max(0, squashAmount - dt * 2.6);
         recoil = Math.max(0, recoil - dt * 3.2);
         hugAmount = Math.max(0, hugAmount - dt * 0.85);
-        // Slower than any other decay. A pet that let go as fast as it began
-        // would blink out of existence; this one is a long, easy release, and
-        // the other reactions are layered on top of it while it fades.
-        petAmount = Math.max(0, petAmount - dt * 0.7);
-        // Speed has to fall too, or a stroke that ends fast leaves the head
-        // lagging for as long as petAmount takes to fade.
+        // A long release. 0.7 put the whole gesture out in about 1.4s, which
+        // is too short for a stroke to read as sustained — the head would
+        // have faded before a slow pet had finished crossing the skull. At
+        // 0.3 it holds for roughly three seconds, so the character stays
+        // melted for as long as the hand is on it and eases out afterwards.
+        petAmount = Math.max(0, petAmount - dt * 0.3);
+        // Speed falls faster than the amount, since it is derived from motion
+        // and there is no motion once the hand has gone.
         petSpeed = Math.max(0, petSpeed - dt * 3);
       }
 
@@ -309,8 +338,19 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
         //
         // So: toward, and further than the touch itself, so the muzzle ends
         // up under the hand rather than beside it.
-        petX = damp(petX, petTargetX, 9, dt);
-        petY = damp(petY, petTargetY, 9, dt);
+        // Track the hand's position, and track it TIGHTLY.
+        //
+        // This is the ceiling on the whole gesture, and it was the reason the
+        // response read as weak no matter what was added downstream: at
+        // speed 9 the head sat at roughly half the hand's angle even when
+        // the hand stopped moving, and no amount of stiffness in the spring
+        // after it could recover a target that was itself half-sized. Raising
+        // it to 22 helped but still left a third on the table. 40 puts the
+        // head within a few percent of the hand in about a fifth of a
+        // second, which is fast enough to feel connected and still slow
+        // enough to smooth the raw event stream.
+        petX = damp(petX, petTargetX, 40, dt);
+        petY = damp(petY, petTargetY, 40, dt);
 
         // How far the head still has to travel this frame, per second. This
         // is the weight cue: on a fast stroke the head visibly trails the hand
@@ -323,11 +363,38 @@ export function createReactions(bear: Bear, hearts: Hearts): Reactions {
         // make the head twitch rather than lean.
         petSpeed = damp(petSpeed, rawSpeed, 8, dt);
 
-        // Lag the head behind a fast hand. The multiplier only bites once the
-        // hand is moving quickly, so a slow, careful stroke still tracks
-        // closely and a quick one drags the head along after it.
-        const lag = 1 - Math.min(petSpeed * 0.18, 0.5);
-        rig.head.rotation.y = damp(rig.head.rotation.y, petX * 0.38 * lag, 5, dt);
+        // Where the head is trying to be, this instant. The head always
+        // ARRIVES here — a stroke must reach the hand no matter how fast it
+        // is going.
+        const follow = petX * 0.38;
+        const target = petAmount > 0.01 ? follow : 0;
+
+        // The weight, as a spring rather than as a lag.
+        //
+        // The first attempt at this lagged the head behind a fast hand, up to
+        // half the angle. It read as heaviness in theory and as deafness in
+        // practice: the faster someone petted, the further behind the head
+        // fell, so a quick stroke produced a smaller response than a slow
+        // one. Laying the target back and then chasing it with a spring
+        // gives the arrival overshoot and settle — which is what mass looks
+        // like — without ever withholding the response.
+        //
+        // The target drops to zero once the pet has faded, and the spring
+        // carries the head home on its own momentum — which is why a release
+        // eases back rather than snapping.
+        //
+        // Stiffness and damping are the standard pair. 26/7 is a soft,
+        // floaty spring — pleasant for a one-off nudge, but it could not
+        // keep up with a hand that never stopped moving, so the head
+        // trailed the stroke by most of its width. 60/14 is roughly twice as
+        // stiff with the damping raised in proportion, which keeps the same
+        // overshoot ratio while arriving in about a third of the time. Raise
+        // the first without the second and it visibly oscillates; the ratio
+        // is what has to be held.
+        const error = target - petSpringAngle;
+        petSpringVelocity += (error * 60 - petSpringVelocity * 14) * dt;
+        petSpringAngle += petSpringVelocity * dt;
+        rig.head.rotation.y = petSpringAngle;
         // Recoil tilts the head back and away from the pat.
         rig.head.rotation.z = -recoil * 0.3;
         rig.head.position.y =
