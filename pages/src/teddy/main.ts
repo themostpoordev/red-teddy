@@ -9,7 +9,7 @@
  */
 
 import "./styles.css";
-import { createApp } from "./app";
+import { createApp } from "../app";
 
 const host = document.getElementById("stage");
 const boot = document.getElementById("boot");
