@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { resolve } from "node:path";
 
 /**
@@ -49,6 +50,13 @@ const PAGES = {
 };
 
 export default defineConfig({
+  // svelte() returns an ARRAY of plugins, not a single one — the compiler,
+  // the HMR handler and the inspector are separate hooks. Wrapping it as
+  // `plugins: [svelte()]` puts an array inside the array, which Vite ignores
+  // silently: the build still runs, .svelte files just do not compile and the
+  // failure surfaces as "module not found" on the import instead.
+  plugins: [...svelte()],
+
   // See the note above: this is what makes `pages/teddy/` land at `/teddy/`.
   root: "pages",
 

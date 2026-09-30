@@ -4,6 +4,10 @@ dist/
 
 # Dependencies
 node_modules/
+# Only needed by the local visual-testing scripts under scripts/, which are
+# themselves ignored below. Keeping it out of the manifest means a clone of
+# this repo does not pull a browser binary it has no way to run.
+playwright/
 
 # Editor
 .vscode/
