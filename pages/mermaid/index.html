@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <title>mermaid — face test</title>
+    <style>
+      /* The stage must be fixed and full-bleed. A plain div in flow has no
+         height of its own, the canvas inherits 0, and the scene renders
+         nothing — with no error anywhere, because every call succeeded on a
+         zero-sized surface. */
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0d1526;
+      }
+      #stage {
+        position: fixed;
+        inset: 0;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <script type="module" src="../src/mermaid/probe.ts"></script>
+  </body>
+</html>

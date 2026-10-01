@@ -23,17 +23,31 @@
     index = 0,
   }: { character: Character; index?: number } = $props();
 
-  const hue = $derived(character.hue);
+  /**
+   * The palette, flattened onto the element as custom properties.
+   *
+   * The SVG paths reference colours as `var(--main)`, `var(--skin)` and so
+   * on, so the whole palette has to reach the element as real custom
+   * properties rather than being passed to the SVG some other way. `--hue`
+   * is set alongside it because the card's own background and border are
+   * built from the character's hue, which is separate from the colours the
+   * character is drawn with.
+   */
+  const vars = $derived.by(() => {
+    const out = [`--hue:${character.hue}`];
+    for (const [name, value] of Object.entries(character.palette)) {
+      if (value) out.push(`--${name}:${value}`);
+    }
+    return out.join(";");
+  });
 </script>
 
 <a
   class="figure"
   class:soon={character.soon}
   href={character.soon ? undefined : character.href}
-  style={`--hue: ${hue}; --i: ${index}`}
-  aria-label={character.soon
-    ? `${character.name} — ${character.tag}`
-    : `${character.name} — ${character.tag}`}
+  style={`${vars}; --i:${index}`}
+  aria-label={`${character.name} — ${character.tag}`}
 >
   <span class="figure__shadow" aria-hidden="true"></span>
 
@@ -52,16 +66,10 @@
 
 <style>
   .figure {
-    /* Every colour is derived from one hue, so a new character needs one
-       number rather than a palette. The lightness steps are chosen to keep
-       the fur clearly lighter than the ink and the blush readable on both
-       the paper and the cream. */
-    --fur: hsl(var(--hue) 72% 62%);
-    --fur-pale: hsl(var(--hue) 68% 88%);
-    --fur-shade: hsl(var(--hue) 60% 52%);
-    --ink: hsl(var(--hue) 32% 20%);
-    --blush: hsl(var(--hue) 88% 74%);
-
+    /* The character's own colours arrive as custom properties set inline
+       from its palette, so nothing here declares them — this block is only
+       the card's surface, which is built from the character's hue so the
+       surroundings always harmonise with it. */
     display: grid;
     justify-items: center;
     gap: 2px;
@@ -128,21 +136,26 @@
     animation-duration: 1.1s;
   }
 
+  /* Defaults only. Every path that needs a colour sets its own fill, and
+     the ones that do not fall back to the character's main colour — so a
+     path with no fill still belongs to the character rather than coming out
+     black. */
   .figure__body svg {
     display: block;
     width: 100%;
     height: auto;
-    fill: var(--fur);
-    stroke: var(--ink);
-    stroke-width: 2.5;
-    stroke-linejoin: round;
+    fill: var(--main);
+    stroke: none;
     overflow: visible;
   }
 
   .figure__name {
     font-size: 15px;
     font-weight: 800;
-    color: var(--ink);
+    /* --ink is dark on every character by construction, which is what makes
+       it safe for the name; the names must stay legible and the characters'
+       own ink colour may not be. */
+    color: hsl(var(--hue) 30% 24%);
     margin-top: 6px;
   }
 
@@ -161,7 +174,7 @@
 
   .soon .figure__body svg {
     fill: transparent;
-    stroke: var(--ink);
+    stroke: hsl(var(--hue) 30% 30%);
   }
 
   @keyframes walk {
