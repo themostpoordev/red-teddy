@@ -1,0 +1,120 @@
+/**
+ * The cat page's stylesheet.
+ *
+ * Two jobs only: fill the viewport for the canvas, and give the boot layer
+ * something to say before the first frame. Everything about the character
+ * itself is in the 3D, not here.
+ */
+
+:root {
+  /* Matches BACKDROP_TOP in cat-page.ts. Declared twice because the canvas
+     covers it anyway, but if WebGL fails the page should still be the right
+     colour rather than white. */
+  --cat-paper: #efe6f6;
+  --cat-ink: #332b40;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--cat-paper);
+  color: var(--cat-ink);
+  /* Thai faces named before the generic fallback: a machine with no
+     Thai-capable default renders every glyph as a tofu box. */
+  font-family: ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, -apple-system,
+    "Noto Sans Thai", "Leelawadee UI", "Sarabun", Tahoma, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#stage {
+  /* Fixed and full-bleed. A div in normal flow has no height of its own, the
+     canvas inherits zero, and the scene renders nothing — with no error
+     anywhere, because every call succeeded on a zero-sized surface. */
+  position: fixed;
+  inset: 0;
+}
+
+#stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* The canvas owns every gesture, so a drag across the cat never turns into
+     a page scroll or a double-tap zoom. */
+  touch-action: none;
+}
+
+/* --- boot ------------------------------------------------------------- */
+
+.boot {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  text-align: center;
+  padding: 24px;
+  color: #7a6a8c;
+  font-size: 14px;
+  line-height: 1.6;
+  transition: opacity 0.3s ease;
+  z-index: 1;
+}
+
+.boot.is-gone {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.boot__cat {
+  width: 46px;
+  height: 46px;
+  /* A cat's silhouette in CSS: two triangles for the ears over a circle for
+     the head. Cheap, and it says "cat" before anything renders. */
+  background: var(--cat-ink);
+  border-radius: 50%;
+  position: relative;
+  margin-bottom: 4px;
+}
+
+.boot__cat::before,
+.boot__cat::after {
+  content: "";
+  position: absolute;
+  top: -8px;
+  width: 0;
+  height: 0;
+  border-left: 11px solid transparent;
+  border-right: 11px solid transparent;
+  border-bottom: 16px solid var(--cat-ink);
+}
+
+.boot__cat::before {
+  left: 0;
+  transform: rotate(-18deg);
+}
+
+.boot__cat::after {
+  right: 0;
+  transform: rotate(18deg);
+}
+
+.boot__detail {
+  margin: 0;
+  opacity: 0.75;
+  max-width: 32ch;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot {
+    transition: none;
+  }
+}

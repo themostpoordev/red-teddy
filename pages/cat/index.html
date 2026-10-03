@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#efe6f6" />
+    <title>แมวดำ</title>
+    <meta
+      name="description"
+      content="แมวดำนั่งอยู่กลางจอ — แตะหัวให้เขาเอียงหน้าเข้าหา จับหางแล้วลากไปเล่น"
+    />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <style>
+      /* Critical shell, inlined so the first paint never flashes white
+         before the stylesheet arrives. The full sheet is src/cat/cat.css;
+         this is only what the empty frame needs. */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #efe6f6;
+      }
+      body {
+        font-family: ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui,
+          -apple-system, "Noto Sans Thai", "Leelawadee UI", "Sarabun", Tahoma,
+          sans-serif;
+        color: #332b40;
+        -webkit-font-smoothing: antialiased;
+      }
+      #stage {
+        position: fixed;
+        inset: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <div class="boot" id="boot">
+      <p>กำลังโหลด…</p>
+    </div>
+    <script type="module" src="../src/cat/main.ts"></script>
+  </body>
+</html>

@@ -47,6 +47,7 @@ const PAGES = {
   // to find the file.
   index: resolve(import.meta.dirname, "pages/index.html"),
   teddy: resolve(import.meta.dirname, "pages/teddy/index.html"),
+  cat: resolve(import.meta.dirname, "pages/cat/index.html"),
 };
 
 export default defineConfig({
