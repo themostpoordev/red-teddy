@@ -28,3 +28,6 @@ npm-debug.log*
 # assertion scripts, not part of the library or the site — they exist to check
 # renders on one machine and would just be dead weight in the repo.
 scripts/
+
+# Reference images used while designing a character. Not part of the build.
+ref/
